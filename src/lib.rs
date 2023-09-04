@@ -164,8 +164,6 @@ use std::iter;
 use std::panic;
 
 use once_cell::sync::Lazy;
-use quote::quote;
-use syn::{parse_macro_input, LitStr};
 
 #[proc_macro]
 pub fn paste(input: TokenStream) -> TokenStream {

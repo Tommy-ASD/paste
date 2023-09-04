@@ -20,8 +20,6 @@ trybuild = { version = "1.0.49", features = ["diff"] }
 
 [dependencies]
 once_cell = "1.18.0"
-quote = "1.0.33"
-syn = "2.0.31"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
