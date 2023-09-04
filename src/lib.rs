@@ -281,13 +281,6 @@ fn expand(
             }
             Some(other) => {
                 lookbehind = Lookbehind::Other;
-                println!("Token: {other}");
-                match &other {
-                    TokenTree::Ident(ident) => {
-                        println!("Identifier: {}", ident.to_string()); // Print the identifier's value
-                    }
-                    _ => {}
-                }
                 expanded.extend(iter::once(other));
             }
             None => {
@@ -474,6 +467,7 @@ pub fn unique_paste(input: TokenStream) -> TokenStream {
         input.clone(),
         &mut contains_paste,
         flatten_single_interpolation,
+        false,
     ) {
         Ok(expanded) => {
             if contains_paste {
@@ -490,6 +484,7 @@ fn unique_expand(
     input: TokenStream,
     contains_paste: &mut bool,
     flatten_single_interpolation: bool,
+    recurse: bool,
 ) -> Result<TokenStream> {
     let mut expanded = TokenStream::new();
     let mut lookbehind = Lookbehind::Other;
@@ -538,6 +533,7 @@ fn unique_expand(
                         content,
                         &mut group_contains_paste,
                         flatten_single_interpolation && !is_attribute,
+                        true,
                     )?;
                     if is_attribute {
                         nested = expand_attr(nested, span, &mut group_contains_paste)?;
@@ -573,17 +569,12 @@ fn unique_expand(
             }
             Some(other) => {
                 lookbehind = Lookbehind::Other;
-                println!("Token: {other}");
-                match &other {
-                    TokenTree::Ident(ident) => {
-                        println!("Identifier: {}", ident.to_string()); // Print the identifier's value
-                    }
-                    _ => {}
-                }
                 expanded.extend(iter::once(other));
             }
             None => {
-                increase_nonce();
+                if !recurse {
+                    increase_nonce();
+                }
                 return Ok(expanded);
             }
         }
