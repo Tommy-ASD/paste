@@ -158,8 +158,14 @@ use crate::error::{Error, Result};
 use crate::segment::Segment;
 use proc_macro::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree};
 use std::char;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::iter;
 use std::panic;
+
+use once_cell::sync::Lazy;
+use quote::quote;
+use syn::{parse_macro_input, LitStr};
 
 #[proc_macro]
 pub fn paste(input: TokenStream) -> TokenStream {
@@ -277,9 +283,18 @@ fn expand(
             }
             Some(other) => {
                 lookbehind = Lookbehind::Other;
+                println!("Token: {other}");
+                match &other {
+                    TokenTree::Ident(ident) => {
+                        println!("Identifier: {}", ident.to_string()); // Print the identifier's value
+                    }
+                    _ => {}
+                }
                 expanded.extend(iter::once(other));
             }
-            None => return Ok(expanded),
+            None => {
+                return Ok(expanded);
+            }
         }
     }
 }
@@ -451,4 +466,142 @@ fn pasted_to_tokens(mut pasted: String, span: Span) -> Result<TokenStream> {
 
     tokens.extend(iter::once(ident));
     Ok(tokens)
+}
+
+#[proc_macro]
+pub fn unique_paste(input: TokenStream) -> TokenStream {
+    let mut contains_paste = false;
+    let flatten_single_interpolation = true;
+    match unique_expand(
+        input.clone(),
+        &mut contains_paste,
+        flatten_single_interpolation,
+    ) {
+        Ok(expanded) => {
+            if contains_paste {
+                expanded
+            } else {
+                input
+            }
+        }
+        Err(err) => err.to_compile_error(),
+    }
+}
+
+fn unique_expand(
+    input: TokenStream,
+    contains_paste: &mut bool,
+    flatten_single_interpolation: bool,
+) -> Result<TokenStream> {
+    let mut expanded = TokenStream::new();
+    let mut lookbehind = Lookbehind::Other;
+    let mut prev_none_group = None::<Group>;
+    let mut tokens = input.into_iter().peekable();
+    loop {
+        let token = tokens.next();
+        if let Some(group) = prev_none_group.take() {
+            if match (&token, tokens.peek()) {
+                (Some(TokenTree::Punct(fst)), Some(TokenTree::Punct(snd))) => {
+                    fst.as_char() == ':' && snd.as_char() == ':' && fst.spacing() == Spacing::Joint
+                }
+                _ => false,
+            } {
+                expanded.extend(group.stream());
+                *contains_paste = true;
+            } else {
+                expanded.extend(iter::once(TokenTree::Group(group)));
+            }
+        }
+        match token {
+            Some(TokenTree::Group(group)) => {
+                let delimiter = group.delimiter();
+                let content = group.stream();
+                let span = group.span();
+                if delimiter == Delimiter::Bracket && is_paste_operation(&content) {
+                    let segments = parse_bracket_as_segments(content, span)?;
+                    let mut pasted = segment::paste(&segments)?;
+                    unsafe {
+                        pasted.push_str(&(calculate_hash(&*NONCE)).to_string());
+                    }
+                    let tokens = pasted_to_tokens(pasted, span)?;
+                    expanded.extend(tokens);
+                    *contains_paste = true;
+                } else if flatten_single_interpolation
+                    && delimiter == Delimiter::None
+                    && is_single_interpolation_group(&content)
+                {
+                    expanded.extend(content);
+                    *contains_paste = true;
+                } else {
+                    let mut group_contains_paste = false;
+                    let is_attribute = delimiter == Delimiter::Bracket
+                        && (lookbehind == Lookbehind::Pound || lookbehind == Lookbehind::PoundBang);
+                    let mut nested = unique_expand(
+                        content,
+                        &mut group_contains_paste,
+                        flatten_single_interpolation && !is_attribute,
+                    )?;
+                    if is_attribute {
+                        nested = expand_attr(nested, span, &mut group_contains_paste)?;
+                    }
+                    let group = if group_contains_paste {
+                        let mut group = Group::new(delimiter, nested);
+                        group.set_span(span);
+                        *contains_paste = true;
+                        group
+                    } else {
+                        group.clone()
+                    };
+                    if delimiter != Delimiter::None {
+                        expanded.extend(iter::once(TokenTree::Group(group)));
+                    } else if lookbehind == Lookbehind::DoubleColon {
+                        expanded.extend(group.stream());
+                        *contains_paste = true;
+                    } else {
+                        prev_none_group = Some(group);
+                    }
+                }
+                lookbehind = Lookbehind::Other;
+            }
+            Some(TokenTree::Punct(punct)) => {
+                lookbehind = match punct.as_char() {
+                    ':' if lookbehind == Lookbehind::JointColon => Lookbehind::DoubleColon,
+                    ':' if punct.spacing() == Spacing::Joint => Lookbehind::JointColon,
+                    '#' => Lookbehind::Pound,
+                    '!' if lookbehind == Lookbehind::Pound => Lookbehind::PoundBang,
+                    _ => Lookbehind::Other,
+                };
+                expanded.extend(iter::once(TokenTree::Punct(punct)));
+            }
+            Some(other) => {
+                lookbehind = Lookbehind::Other;
+                println!("Token: {other}");
+                match &other {
+                    TokenTree::Ident(ident) => {
+                        println!("Identifier: {}", ident.to_string()); // Print the identifier's value
+                    }
+                    _ => {}
+                }
+                expanded.extend(iter::once(other));
+            }
+            None => {
+                increase_nonce();
+                return Ok(expanded);
+            }
+        }
+    }
+}
+
+static mut NONCE: Lazy<i32> = Lazy::new(|| 0);
+
+fn increase_nonce() {
+    unsafe {
+        *NONCE += 1;
+    }
+}
+
+fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }
