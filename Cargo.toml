@@ -1,13 +1,12 @@
 [package]
-name = "paste"
-version = "1.0.14"
-authors = ["David Tolnay <dtolnay@gmail.com>"]
-categories = ["development-tools", "no-std", "no-std::no-alloc"]
-description = "Macros for all your token pasting needs"
+name = "unique-paste"
+version = "0.1.0"
+categories = ["development-tools"]
+description = "A modified version of Paste, with a unique_paste! macro."
 edition = "2018"
 keywords = ["macros"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/dtolnay/paste"
+repository = "https://github.com/Tommy-ASD/unique-paste"
 rust-version = "1.31"
 
 [lib]

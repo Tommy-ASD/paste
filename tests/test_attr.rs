@@ -1,7 +1,7 @@
 #![allow(clippy::let_underscore_untyped)]
 
-use paste::paste;
 use paste_test_suite::paste_test;
+use unique_paste::paste;
 
 #[test]
 fn test_attr() {
